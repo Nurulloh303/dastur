@@ -7,3 +7,6 @@ google-generativeai>=0.8.5
 django-cors-headers>=4.7.0
 drf-spectacular
 drf-spectacular[sidecar]
+gunicorn>=20.1.0
+whitenoise>=6.4.0
+dj-database-url
