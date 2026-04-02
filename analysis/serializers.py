@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 from .models import Device, Measurement, AI_Prediction
 
@@ -48,6 +49,19 @@ class FlexibleMeasurementCreateSerializer(serializers.Serializer):
 
     device_type = serializers.CharField(required=False)
     type = serializers.CharField(required=False)
+
+    indication_temperatures = serializers.ListField(
+        child=serializers.FloatField(), required=False
+    )
+    chamber_temperatures = serializers.ListField(
+        child=serializers.FloatField(), required=False
+    )
+    t_ref = serializers.FloatField(required=False)
+    t_ref_load = serializers.FloatField(required=False)
+    t_le = serializers.FloatField(required=False)
+    t_he = serializers.FloatField(required=False)
+    u_cal_std = serializers.FloatField(required=False)
+    re_std = serializers.FloatField(required=False)
 
     def validate(self, attrs):
         resolved_temperature = attrs.get('temperature', attrs.get('temp'))
@@ -116,13 +130,27 @@ class FlexibleMeasurementCreateSerializer(serializers.Serializer):
                 device.name = resolved_device_name
                 device.save(update_fields=['name'])
 
+        formula_payload = {
+            "indication_temperatures": validated_data.get("indication_temperatures", []),
+            "chamber_temperatures": validated_data.get("chamber_temperatures", []),
+            "t_ref": validated_data.get("t_ref"),
+            "t_ref_load": validated_data.get("t_ref_load"),
+            "t_le": validated_data.get("t_le"),
+            "t_he": validated_data.get("t_he"),
+            "u_cal_std": validated_data.get("u_cal_std"),
+            "re_std": validated_data.get("re_std"),
+        }
+
+        merged_sensor_data = validated_data['resolved_sensor_data'].copy()
+        merged_sensor_data.update(formula_payload)
+
         measurement = Measurement.objects.create(
             device=device,
             temperature=validated_data['resolved_temperature'],
             humidity=validated_data['resolved_humidity'],
             power_usage=validated_data['resolved_power_usage'],
-            sensor_data=validated_data['resolved_sensor_data'],
-            timestamp=validated_data.get('timestamp') if validated_data.get('timestamp') else None,
+            sensor_data=merged_sensor_data,
+            timestamp=validated_data.get('timestamp') or timezone.now(),
         )
         return measurement
 
@@ -151,6 +179,7 @@ class MeasurementSerializer(serializers.ModelSerializer):
             'power',
             'sensor_data',
             'sensors',
+            'created_at',
         ]
 
 
@@ -166,6 +195,7 @@ class AIPredictionSerializer(serializers.ModelSerializer):
             'device',
             'measurement',
             'gemini_response',
+            'calculation_result',
             'failure_probability',
             'failure_prob',
             'advice',
@@ -209,6 +239,7 @@ class MeasurementCreateResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     failure_prob = serializers.FloatField()
     advice = serializers.CharField()
+    calculation_result = serializers.JSONField()
 
 
 class DeviceDashboardSerializer(serializers.Serializer):
@@ -220,3 +251,4 @@ class DeviceDashboardSerializer(serializers.Serializer):
     status = serializers.CharField()
     failure_prob = serializers.FloatField()
     advice = serializers.CharField()
+    calculation_result = serializers.JSONField()

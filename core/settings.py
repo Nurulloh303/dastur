@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 from datetime import timedelta
+
 from dotenv import load_dotenv
 from corsheaders.defaults import default_headers
 
@@ -62,7 +63,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "core.wsgi.application"
 ASGI_APPLICATION = "core.asgi.application"
 
-# Railway DATABASE_URL bo‘lsa o‘shani ishlatadi, bo‘lmasa oddiy PG vars ishlaydi
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 if DATABASE_URL:
@@ -131,7 +131,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", os.getenv("GEMINI_TEXT_MODEL", "gemini-1.5-flash"))
 
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
 CORS_ALLOWED_ORIGINS = [

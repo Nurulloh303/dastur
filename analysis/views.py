@@ -153,7 +153,15 @@ class FrontendLoginAPIView(APIView):
                 'sensors': {
                     'ch1': 38.0,
                     'ch2': 38.3
-                }
+                },
+                'indication_temperatures': [38.0, 38.1, 38.2],
+                'chamber_temperatures': [37.9, 38.1, 38.3],
+                't_ref': 38.0,
+                't_ref_load': 37.8,
+                't_le': 37.9,
+                't_he': 38.2,
+                'u_cal_std': 0.2,
+                're_std': 0.1
             },
             request_only=True,
         ),
@@ -204,6 +212,7 @@ class MeasurementCreateAPIView(APIView):
             'status': prediction.status,
             'failure_prob': prediction.failure_probability,
             'advice': prediction.advice,
+            'calculation_result': prediction.calculation_result,
         }, status=status.HTTP_201_CREATED)
 
 
@@ -242,7 +251,7 @@ class DeviceDashboardAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        latest_measurement = device.measurements.order_by('-timestamp').first()
+        latest_measurement = device.measurements.order_by('-timestamp', '-created_at').first()
         latest_prediction = device.predictions.order_by('-created_at').first()
 
         payload = {
@@ -254,5 +263,6 @@ class DeviceDashboardAPIView(APIView):
             'status': latest_prediction.status if latest_prediction else 'unknown',
             'failure_prob': latest_prediction.failure_probability if latest_prediction else 0,
             'advice': latest_prediction.advice if latest_prediction else '',
+            'calculation_result': latest_prediction.calculation_result if latest_prediction else {},
         }
         return Response(payload, status=status.HTTP_200_OK)
