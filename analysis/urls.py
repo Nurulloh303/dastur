@@ -2,9 +2,8 @@ from django.urls import path
 from .views import (
     HealthCheckAPIView,
     DeviceListCreateAPIView,
-    MeasurementCreateAPIView,
-    DeviceDashboardAPIView,
     FrontendLoginAPIView,
+    DeviceDashboardCreateAPIView,
 )
 
 urlpatterns = [
@@ -18,17 +17,11 @@ urlpatterns = [
     # 🔹 Devices
     path('devices/', DeviceListCreateAPIView.as_view(), name='device-list-create'),
 
-    # 🔹 Measurements / AI
-    path('measurements/', MeasurementCreateAPIView.as_view(), name='measurement-create'),
+    # 🔥 ASOSIY ENDPOINT (hammasi shu yerda)
+    path('dashboard/create/', DeviceDashboardCreateAPIView.as_view(), name='dashboard-create'),
 
-    # 👉 Frontend uchun alias endpointlar
-    path('predict/', MeasurementCreateAPIView.as_view(), name='predict-create'),
-    path('analyze/', MeasurementCreateAPIView.as_view(), name='analyze-create'),
-
-    # 🔹 Dashboard
-    path('dashboard/', DeviceDashboardAPIView.as_view(), name='device-dashboard-query'),
-    path('dashboard/<int:device_id>/', DeviceDashboardAPIView.as_view(), name='device-dashboard'),
-
-    # 👉 Alternativ (REST style)
-    path('devices/<int:device_id>/dashboard/', DeviceDashboardAPIView.as_view(), name='device-dashboard-alt'),
+    # 👉 Frontend uchun alias (hammasi bitta viewga boradi)
+    path('measurements/', DeviceDashboardCreateAPIView.as_view(), name='measurement-create'),
+    path('predict/', DeviceDashboardCreateAPIView.as_view(), name='predict-create'),
+    path('analyze/', DeviceDashboardCreateAPIView.as_view(), name='analyze-create'),
 ]

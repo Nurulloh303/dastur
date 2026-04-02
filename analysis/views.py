@@ -1,7 +1,6 @@
 from django.contrib.auth import authenticate
-from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, OpenApiExample
 
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -17,7 +16,6 @@ from .serializers import (
     LoginRequestSerializer,
     LoginResponseSerializer,
     HealthCheckSerializer,
-    MeasurementCreateResponseSerializer,
     DeviceDashboardSerializer,
 )
 from .services import GeminiService, GeminiPredictionError
@@ -120,33 +118,21 @@ class FrontendLoginAPIView(APIView):
 
 
 @extend_schema(
-    tags=['Measurements'],
+    tags=['Dashboard'],
     request=FlexibleMeasurementCreateSerializer,
     responses={
-        201: MeasurementCreateResponseSerializer,
+        201: DeviceDashboardSerializer,
         502: None,
         500: None,
     },
-    description='Yangi measurement qabul qiladi va avtomatik AI tahlilni ishga tushiradi.',
+    description='Yangi measurement yaratadi, AI analiz qiladi va dashboard ko‘rinishida natija qaytaradi.',
     examples=[
         OpenApiExample(
-            'Measurement request example',
-            value={
-                'device_id': 1,
-                'temperature': 37.5,
-                'humidity': 45.0,
-                'power_usage': 220.0,
-                'sensor_data': {
-                    'sensor_1': 37.2,
-                    'sensor_2': 37.8
-                }
-            },
-            request_only=True,
-        ),
-        OpenApiExample(
-            'Flexible frontend example',
+            'Dashboard create example',
             value={
                 'serial': 'TH-001',
+                'name': 'Thermostat A1',
+                'type': 'thermostat',
                 'temp': 38.1,
                 'humid': 42.0,
                 'power': 210.0,
@@ -167,17 +153,19 @@ class FrontendLoginAPIView(APIView):
         ),
     ],
 )
-class MeasurementCreateAPIView(APIView):
+class DeviceDashboardCreateAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         serializer = FlexibleMeasurementCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         measurement = serializer.save()
+        device = measurement.device
 
         try:
             prediction = GeminiService().analyze_device(
-                device=measurement.device,
+                device=device,
                 measurement=measurement
             )
         except GeminiPredictionError as exc:
@@ -199,58 +187,6 @@ class MeasurementCreateAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        measurement_data = MeasurementSerializer(measurement).data
-        prediction_data = AIPredictionSerializer(prediction).data
-        device_data = DeviceSerializer(measurement.device).data
-
-        return Response({
-            'message': 'Measurement saved and analyzed successfully.',
-            'measurement': measurement_data,
-            'prediction': prediction_data,
-            'ai_prediction': prediction_data,
-            'device': device_data,
-            'status': prediction.status,
-            'failure_prob': prediction.failure_probability,
-            'advice': prediction.advice,
-            'calculation_result': prediction.calculation_result,
-        }, status=status.HTTP_201_CREATED)
-
-
-@extend_schema(
-    tags=['Dashboard'],
-    parameters=[
-        OpenApiParameter(name='device_id', required=False, type=int, location=OpenApiParameter.QUERY),
-        OpenApiParameter(name='serial', required=False, type=str, location=OpenApiParameter.QUERY),
-        OpenApiParameter(name='serial_number', required=False, type=str, location=OpenApiParameter.QUERY),
-    ],
-    responses={200: DeviceDashboardSerializer},
-    description='Uskunaning umumiy holati, oxirgi measurement va oxirgi AI prediction ma’lumotini qaytaradi.',
-)
-class DeviceDashboardAPIView(APIView):
-    permission_classes = [AllowAny]
-
-    def get_device(self, request, device_id=None):
-        query_device_id = device_id or request.query_params.get('device_id')
-        serial = request.query_params.get('serial') or request.query_params.get('serial_number')
-
-        if query_device_id:
-            return get_object_or_404(Device, pk=query_device_id)
-
-        if serial:
-            return get_object_or_404(Device, serial_number=serial)
-
-        latest = Device.objects.order_by('-created_at').first()
-        return latest
-
-    def get(self, request, device_id=None, *args, **kwargs):
-        device = self.get_device(request, device_id)
-
-        if device is None:
-            return Response(
-                {'detail': 'Hali hech qanday uskuna yaratilmagan.'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
         latest_measurement = device.measurements.order_by('-timestamp', '-created_at').first()
         latest_prediction = device.predictions.order_by('-created_at').first()
 
@@ -265,4 +201,5 @@ class DeviceDashboardAPIView(APIView):
             'advice': latest_prediction.advice if latest_prediction else '',
             'calculation_result': latest_prediction.calculation_result if latest_prediction else {},
         }
-        return Response(payload, status=status.HTTP_200_OK)
+
+        return Response(payload, status=status.HTTP_201_CREATED)
