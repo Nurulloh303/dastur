@@ -8,7 +8,6 @@ from .views import (
 
 urlpatterns = [
     # 🔹 Health check
-    path('', HealthCheckAPIView.as_view(), name='api-health'),
     path('health/', HealthCheckAPIView.as_view(), name='api-health-2'),
 
     # 🔹 Auth

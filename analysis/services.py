@@ -2,7 +2,7 @@ import json
 import math
 import re
 
-import google.generativeai as genai
+import google.genai
 from django.conf import settings
 
 from .models import Device, AI_Prediction
