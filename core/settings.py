@@ -153,13 +153,19 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 
 CORS_ALLOWED_ORIGINS = [
-    # "http://localhost:5173",          # Localda ishlash uchun
-    # "http://127.0.0.1:5173",         # Ba'zi brauzerlar uchun local manzil
-    "https://dastur-aw8r.onrender.com", # Backend manzilining o'zi
-    "https://ailan.netlify.app", # Frontend qayerga deploy qilingan bo'lsa, o'sha manzil
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "https://dastur-aw8r.onrender.com,https://ailan.netlify.app"
+    ).split(",")
+    if origin.strip()
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://dastur-aw8r.onrender.com",
-    "https://ailan.netlify.app",
+    origin.strip()
+    for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "https://dastur-aw8r.onrender.com,https://ailan.netlify.app"
+    ).split(",")
+    if origin.strip()
 ]

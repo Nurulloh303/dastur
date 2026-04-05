@@ -2,10 +2,10 @@ import json
 import math
 import re
 
-import google.genai
+import google.generativeai as genai
 from django.conf import settings
 
-from .models import Device, AI_Prediction
+from .models import AI_Prediction
 
 
 class GeminiPredictionError(Exception):
@@ -14,70 +14,112 @@ class GeminiPredictionError(Exception):
 
 class FormulaCalculationService:
     @staticmethod
+    def _safe_float(value, default=0.0):
+        try:
+            if value is None or value == "":
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _safe_list(values):
+        if not values:
+            return []
+        result = []
+        for item in values:
+            try:
+                result.append(float(item))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    @staticmethod
     def _safe_max_abs_diff(values, ref):
         if not values:
             return 0.0
-        return max(abs(ref - x) for x in values)
+        return max(abs(float(ref) - float(x)) for x in values)
 
     @staticmethod
     def calculate_from_measurement(measurement):
+        """
+        Shu formulalar asosida hisoblaydi:
+        (8)  T_ind_avg
+        (9)  u(T_ind)
+        (10) u(deltaT_instab)
+        (11) u(deltaT_ir_hom)
+        (12) u(deltaT_radiation)
+        (13) u(deltaT_load)
+        (14) u(deltaT_cal_std)
+        (15) u(deltaT_rec_std)
+        """
+
         data = measurement.sensor_data or {}
 
-        t_ind_list = data.get("indication_temperatures", []) or []
-        chamber_temps = data.get("chamber_temperatures", []) or []
+        t_ind_list = FormulaCalculationService._safe_list(
+            data.get("indication_temperatures", [])
+        )
+        chamber_temps = FormulaCalculationService._safe_list(
+            data.get("chamber_temperatures", [])
+        )
 
-        t_ref = data.get("t_ref")
-        t_ref_load = data.get("t_ref_load")
-        t_le = data.get("t_le")
-        t_he = data.get("t_he")
-        u_cal_std = data.get("u_cal_std")
-        re_std = data.get("re_std")
+        t_ref = FormulaCalculationService._safe_float(data.get("t_ref"), None)
+        t_ref_load = FormulaCalculationService._safe_float(data.get("t_ref_load"), None)
+        t_le = FormulaCalculationService._safe_float(data.get("t_le"), None)
+        t_he = FormulaCalculationService._safe_float(data.get("t_he"), None)
+        u_cal_std = FormulaCalculationService._safe_float(data.get("u_cal_std"), None)
+        re_std = FormulaCalculationService._safe_float(data.get("re_std"), None)
 
         if not t_ind_list:
-            t_ind_list = [measurement.temperature]
+            t_ind_list = [FormulaCalculationService._safe_float(measurement.temperature, 0.0)]
 
         n = len(t_ind_list)
 
-        # (8)
+        # (8) O'rtacha qiymat
         t_ind_avg = sum(t_ind_list) / n if n else 0.0
 
-        # (9)
+        # (9) Takroriy o'lchov bo'yicha standart noaniqlik
         if n > 1:
             numerator = sum((x - t_ind_avg) ** 2 for x in t_ind_list)
             u_t_ind = math.sqrt(numerator / (n * (n - 1)))
         else:
             u_t_ind = 0.0
 
+        # Agar chamber temp kelmasa, indication tempdan foydalanamiz
         if not chamber_temps:
-            chamber_temps = t_ind_list
+            chamber_temps = t_ind_list[:]
 
         t_bar = sum(chamber_temps) / len(chamber_temps) if chamber_temps else 0.0
 
-        # (10)
-        u_instab = (1 / math.sqrt(3)) * FormulaCalculationService._safe_max_abs_diff(chamber_temps, t_bar)
+        # (10) Beqarorlik
+        u_instab = (1 / math.sqrt(3)) * FormulaCalculationService._safe_max_abs_diff(
+            chamber_temps, t_bar
+        )
 
-        # (11)
+        # (11) Bir xil emaslik
         u_inhom = 0.0
         if t_ref is not None:
-            u_inhom = (1 / math.sqrt(3)) * FormulaCalculationService._safe_max_abs_diff(chamber_temps, float(t_ref))
+            u_inhom = (1 / math.sqrt(3)) * FormulaCalculationService._safe_max_abs_diff(
+                chamber_temps, t_ref
+            )
 
-        # (12)
+        # (12) Radiatsiya ta'siri
         u_radiation = 0.0
         if t_le is not None and t_he is not None:
-            u_radiation = (0.2 / math.sqrt(3)) * abs(float(t_le) - float(t_he))
+            u_radiation = (0.2 / math.sqrt(3)) * abs(t_le - t_he)
 
-        # (13)
+        # (13) Yuklama ta'siri
         u_load = 0.0
         if t_ref is not None and t_ref_load is not None:
-            u_load = (0.2 / math.sqrt(3)) * abs(float(t_ref) - float(t_ref_load))
+            u_load = (0.2 / math.sqrt(3)) * abs(t_ref - t_ref_load)
 
-        # (14)
-        u_cal_std_value = (float(u_cal_std) / 2.0) if u_cal_std is not None else 0.0
+        # (14) Etalon termometr sertifikat noaniqligi
+        u_cal_std_value = (u_cal_std / 2.0) if u_cal_std is not None else 0.0
 
-        # (15)
-        u_rec_std = (float(re_std) / (2 * math.sqrt(3))) if re_std is not None else 0.0
+        # (15) Etalon termometr rezolyutsiya noaniqligi
+        u_rec_std = (re_std / (2 * math.sqrt(3))) if re_std is not None else 0.0
 
-        # Combined standard uncertainty
+        # Kombinatsiyalangan standart noaniqlik
         u_combined = math.sqrt(
             u_t_ind ** 2 +
             u_instab ** 2 +
@@ -88,10 +130,10 @@ class FormulaCalculationService:
             u_rec_std ** 2
         )
 
-        # Expanded uncertainty (k=2)
+        # Kengaytirilgan noaniqlik
         expanded_uncertainty = 2 * u_combined
 
-        # Temporary business rule
+        # Hozircha threshold-based status
         if expanded_uncertainty < 0.5:
             status = AI_Prediction.STATUS_HEALTHY
             failure_prob = 15.0
@@ -120,67 +162,79 @@ class FormulaCalculationService:
 
 class GeminiService:
     def __init__(self):
-        api_key = settings.GEMINI_API_KEY
+        api_key = getattr(settings, "GEMINI_API_KEY", None)
+        model_name = getattr(settings, "GEMINI_MODEL", None)
+
         if not api_key:
-            raise GeminiPredictionError("GEMINI_API_KEY topilmadi. .env faylini tekshiring.")
+            raise GeminiPredictionError("GEMINI_API_KEY topilmadi.")
+        if not model_name:
+            raise GeminiPredictionError("GEMINI_MODEL topilmadi.")
+
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        self.model = genai.GenerativeModel(model_name)
 
-    def _build_prompt(self, device: Device, measurement_data: dict, formula_result: dict) -> str:
-        device_label = "termostat" if device.device_type == Device.THERMOSTAT else "quritish shkafi"
+    def _build_prompt(self, device, measurement_data, formula_result):
+        return f"""
+Siz metrologiya va harorat kamerasi monitoringi bo'yicha mutaxassissiz.
 
-        return (
-            f"Siz metrologiya va sanoat uskunalari bo‘yicha mutaxassissiz.\n"
-            f"Qurilma turi: {device_label}\n"
-            f"O‘lchov ma’lumotlari: {json.dumps(measurement_data, ensure_ascii=False, default=str)}\n"
-            f"Formulalar bo‘yicha hisoblangan natijalar: {json.dumps(formula_result, ensure_ascii=False, default=str)}\n\n"
-            f"Diqqat: status va failure_prob ni formuladan kelgan qiymatlarga zid qilmay izoh bering.\n"
-            f"Javobni faqat JSON ko‘rinishda qaytaring:\n"
-            f'{{"status":"healthy|warning|critical|unknown","failure_prob":0-100,"advice":"qisqa tavsiya"}}'
-        )
+Qurilma:
+- Nomi: {device.name}
+- Turi: {device.device_type}
+- Serial: {device.serial_number}
 
-    def _parse_response(self, raw_text: str) -> dict:
-        cleaned = raw_text.strip()
-        cleaned = re.sub(r'^```json\s*', '', cleaned)
-        cleaned = re.sub(r'^```\s*', '', cleaned)
-        cleaned = re.sub(r'\s*```$', '', cleaned)
+O'lchov ma'lumotlari:
+{json.dumps(measurement_data, ensure_ascii=False)}
 
-        try:
-            data = json.loads(cleaned)
-        except json.JSONDecodeError:
+Formula hisoblash natijalari:
+{json.dumps(formula_result, ensure_ascii=False)}
+
+Qoidalar:
+1. Statusni o'zgartirmang.
+2. Failure probability ni o'zgartirmang.
+3. Faqat qisqa tavsiya yozing.
+4. Hech qanday warning, reklama, API notice yozmang.
+5. Faqat JSON qaytaring.
+
+Kerakli format:
+{{
+  "advice": "qisqa va aniq tavsiya"
+}}
+"""
+
+    def _parse_response(self, raw_text):
+        cleaned = (raw_text or "").strip()
+        cleaned = re.sub(r"^```json\s*", "", cleaned)
+        cleaned = re.sub(r"^```\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        bad_phrases = [
+            "IMPORTANT NOTICE",
+            "deprecated",
+            "legacy text api",
+            "migrate to our new service",
+        ]
+
+        if any(p.lower() in cleaned.lower() for p in bad_phrases):
             return {
-                "status": AI_Prediction.STATUS_UNKNOWN,
-                "failure_prob": 0.0,
-                "advice": "AI javobini JSON formatda ajratib bo‘lmadi.",
+                "advice": "AI xizmati noto‘g‘ri formatdagi javob qaytardi. Formula natijasiga ko‘ra kuzatuv davom ettirilsin.",
                 "raw": {"raw_text": raw_text},
             }
 
-        status = str(data.get("status", AI_Prediction.STATUS_UNKNOWN)).lower().strip()
-        if status not in {
-            AI_Prediction.STATUS_HEALTHY,
-            AI_Prediction.STATUS_WARNING,
-            AI_Prediction.STATUS_CRITICAL,
-            AI_Prediction.STATUS_UNKNOWN,
-        }:
-            status = AI_Prediction.STATUS_UNKNOWN
-
         try:
-            failure_prob = float(data.get("failure_prob", 0))
-        except (TypeError, ValueError):
-            failure_prob = 0.0
+            data = json.loads(cleaned)
+            return {
+                "advice": str(data.get("advice", "")).strip() or "AI tavsiya topilmadi.",
+                "raw": data,
+            }
+        except Exception:
+            return {
+                "advice": "AI javobini JSON formatda ajratib bo‘lmadi. Formula natijasiga tayangan holda davom etildi.",
+                "raw": {"raw_text": raw_text},
+            }
 
-        failure_prob = max(0.0, min(100.0, failure_prob))
-
-        return {
-            "status": status,
-            "failure_prob": failure_prob,
-            "advice": str(data.get("advice", "")).strip(),
-            "raw": data,
-        }
-
-    def analyze_device(self, device: Device, measurement=None) -> AI_Prediction:
+    def analyze_device(self, device, measurement=None):
         if measurement is None:
-            measurement = device.measurements.order_by('-created_at').first()
+            measurement = device.measurements.order_by("-created_at").first()
 
         if measurement is None:
             raise GeminiPredictionError("Tahlil uchun measurement topilmadi.")
@@ -195,10 +249,21 @@ class GeminiService:
             "timestamp": str(measurement.timestamp),
         }
 
-        prompt = self._build_prompt(device, measurement_data, formula_result)
-        response = self.model.generate_content(prompt)
-        response_text = getattr(response, "text", "") or ""
-        parsed = self._parse_response(response_text)
+        parsed = {
+            "advice": "Formula natijalariga ko‘ra qurilmani kuzatishda davom eting.",
+            "raw": {},
+        }
+
+        try:
+            prompt = self._build_prompt(device, measurement_data, formula_result)
+            response = self.model.generate_content(prompt)
+            response_text = getattr(response, "text", "") or ""
+            parsed = self._parse_response(response_text)
+        except Exception as exc:
+            parsed = {
+                "advice": f"AI tavsiya olishda xatolik bo‘ldi: {exc}",
+                "raw": {"error": str(exc)},
+            }
 
         return AI_Prediction.objects.create(
             device=device,
@@ -206,6 +271,6 @@ class GeminiService:
             gemini_response=parsed["raw"],
             calculation_result=formula_result,
             failure_probability=formula_result["failure_prob"],
-            advice=parsed["advice"] or "Formula natijalariga ko‘ra kuzatuvni davom ettiring.",
+            advice=parsed["advice"],
             status=formula_result["status"],
         )
