@@ -30,7 +30,6 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 
 class MeasurementCreateSerializer(serializers.Serializer):
-    # Device identification
     device = serializers.IntegerField(required=False)
     device_id = serializers.IntegerField(required=False)
 
@@ -45,7 +44,6 @@ class MeasurementCreateSerializer(serializers.Serializer):
 
     location = serializers.CharField(required=False, allow_blank=True)
 
-    # Main measurements
     temperature = serializers.FloatField(required=False)
     temp = serializers.FloatField(required=False)
 
@@ -58,12 +56,10 @@ class MeasurementCreateSerializer(serializers.Serializer):
 
     timestamp = serializers.DateTimeField(required=False)
 
-    # Additional sensor payload
     sensor_data = serializers.JSONField(required=False)
     sensor_values = serializers.JSONField(required=False)
     sensors = serializers.JSONField(required=False)
 
-    # Formula fields
     indication_temperatures = serializers.ListField(
         child=serializers.FloatField(),
         required=False,
@@ -186,6 +182,7 @@ class MeasurementCreateSerializer(serializers.Serializer):
                     "name": resolved_name or "AI Device",
                     "device_type": resolved_device_type,
                     "location": resolved_location,
+                    "status": Device.STATUS_ONLINE,
                 },
             )
 
@@ -195,13 +192,17 @@ class MeasurementCreateSerializer(serializers.Serializer):
             device.name = resolved_name
             updated_fields.append("name")
 
-        if resolved_device_type and getattr(device, "device_type", None) != resolved_device_type:
+        if resolved_device_type and device.device_type != resolved_device_type:
             device.device_type = resolved_device_type
             updated_fields.append("device_type")
 
-        if resolved_location is not None and hasattr(device, "location") and device.location != resolved_location:
+        if device.location != resolved_location:
             device.location = resolved_location
             updated_fields.append("location")
+
+        if device.status != Device.STATUS_ONLINE:
+            device.status = Device.STATUS_ONLINE
+            updated_fields.append("status")
 
         if updated_fields:
             device.save(update_fields=updated_fields)

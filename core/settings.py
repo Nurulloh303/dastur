@@ -49,8 +49,7 @@ INSTALLED_APPS = [
 # MIDDLEWARE
 # =========================
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # 🔥 ENG TEPADA
-
+    "corsheaders.middleware.CorsMiddleware",   # eng tepada bo'lishi kerak
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
 
@@ -216,31 +215,41 @@ def get_env_list(name, default=""):
 # =========================
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
 
+CORS_ALLOWED_ORIGINS = get_env_list(
+    "CORS_ALLOWED_ORIGINS",
+    ",".join([
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ailan.netlify.app",
+        "https://dastur-aw8r.onrender.com",
+    ])
+)
 
 CORS_ALLOW_HEADERS = list(default_headers)
+CORS_ALLOW_CREDENTIALS = True
 
+# kerak bo'lsa custom headerlar uchun:
+# CORS_ALLOW_HEADERS = list(default_headers) + [
+#     "x-requested-with",
+# ]
 
 
 # =========================
-CORS_ALLOW_ALL_ORIGINS = False
-
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://ailan.netlify.app",
-    "https://dastur-aw8r.onrender.com",
-]
-
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://ailan.netlify.app",
-    "https://dastur-aw8r.onrender.com",
-]
+# CSRF
+# =========================
+CSRF_TRUSTED_ORIGINS = get_env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    ",".join([
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ailan.netlify.app",
+        "https://dastur-aw8r.onrender.com",
+    ])
+)
 
 
 # =========================
@@ -255,7 +264,6 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
 else:

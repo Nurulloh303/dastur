@@ -42,18 +42,6 @@ class FormulaCalculationService:
 
     @staticmethod
     def calculate_from_measurement(measurement):
-        """
-        Shu formulalar asosida hisoblaydi:
-        (8)  T_ind_avg
-        (9)  u(T_ind)
-        (10) u(deltaT_instab)
-        (11) u(deltaT_ir_hom)
-        (12) u(deltaT_radiation)
-        (13) u(deltaT_load)
-        (14) u(deltaT_cal_std)
-        (15) u(deltaT_rec_std)
-        """
-
         data = measurement.sensor_data or {}
 
         t_ind_list = FormulaCalculationService._safe_list(
@@ -75,51 +63,40 @@ class FormulaCalculationService:
 
         n = len(t_ind_list)
 
-        # (8) O'rtacha qiymat
         t_ind_avg = sum(t_ind_list) / n if n else 0.0
 
-        # (9) Takroriy o'lchov bo'yicha standart noaniqlik
         if n > 1:
             numerator = sum((x - t_ind_avg) ** 2 for x in t_ind_list)
             u_t_ind = math.sqrt(numerator / (n * (n - 1)))
         else:
             u_t_ind = 0.0
 
-        # Agar chamber temp kelmasa, indication tempdan foydalanamiz
         if not chamber_temps:
             chamber_temps = t_ind_list[:]
 
         t_bar = sum(chamber_temps) / len(chamber_temps) if chamber_temps else 0.0
 
-        # (10) Beqarorlik
         u_instab = (1 / math.sqrt(3)) * FormulaCalculationService._safe_max_abs_diff(
             chamber_temps, t_bar
         )
 
-        # (11) Bir xil emaslik
         u_inhom = 0.0
         if t_ref is not None:
             u_inhom = (1 / math.sqrt(3)) * FormulaCalculationService._safe_max_abs_diff(
                 chamber_temps, t_ref
             )
 
-        # (12) Radiatsiya ta'siri
         u_radiation = 0.0
         if t_le is not None and t_he is not None:
             u_radiation = (0.2 / math.sqrt(3)) * abs(t_le - t_he)
 
-        # (13) Yuklama ta'siri
         u_load = 0.0
         if t_ref is not None and t_ref_load is not None:
             u_load = (0.2 / math.sqrt(3)) * abs(t_ref - t_ref_load)
 
-        # (14) Etalon termometr sertifikat noaniqligi
         u_cal_std_value = (u_cal_std / 2.0) if u_cal_std is not None else 0.0
-
-        # (15) Etalon termometr rezolyutsiya noaniqligi
         u_rec_std = (re_std / (2 * math.sqrt(3))) if re_std is not None else 0.0
 
-        # Kombinatsiyalangan standart noaniqlik
         u_combined = math.sqrt(
             u_t_ind ** 2 +
             u_instab ** 2 +
@@ -130,10 +107,8 @@ class FormulaCalculationService:
             u_rec_std ** 2
         )
 
-        # Kengaytirilgan noaniqlik
         expanded_uncertainty = 2 * u_combined
 
-        # Hozircha threshold-based status
         if expanded_uncertainty < 0.5:
             status = AI_Prediction.STATUS_HEALTHY
             failure_prob = 15.0
